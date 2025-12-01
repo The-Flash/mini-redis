@@ -5,11 +5,19 @@ use tokio::{
     time,
 };
 
+use crate::shutdown::Shutdown;
+
 #[derive(Debug)]
 struct Listener {
     listener: TcpListener,
     notify_shutdown: broadcast::Sender<()>,
     shutdown_complete_tx: mpsc::Sender<()>,
+}
+
+#[derive(Debug)]
+struct Handler {
+    shutdown: Shutdown,
+    _shutdown_complete: mpsc::Sender<()>,
 }
 
 pub async fn run(listener: TcpListener, shutdown: impl Future) {
@@ -50,6 +58,17 @@ impl Listener {
         println!("accepting inbound connections");
         loop {
             let socket = self.accept().await?;
+
+            let mut handler = Handler {
+                shutdown: Shutdown::new(self.notify_shutdown.subscribe()),
+                _shutdown_complete: self.shutdown_complete_tx.clone(),
+            };
+
+            tokio::spawn(async move {
+                if let Err(err) = handler.run().await {
+                    println!("failed to handle connection: {}", err);
+                }
+            });
         }
     }
 
@@ -68,5 +87,12 @@ impl Listener {
             time::sleep(Duration::from_secs(backoff)).await;
             backoff *= 2;
         }
+    }
+}
+
+impl Handler {
+    async fn run(&mut self) -> crate::Result<()> {
+        while !self.shutdown.is_shutdown() {}
+        Ok(())
     }
 }

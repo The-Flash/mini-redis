@@ -1,4 +1,5 @@
 pub mod server;
+pub mod shutdown;
 
 pub const DEFAULT_PORT: u16 = 6380;
 
